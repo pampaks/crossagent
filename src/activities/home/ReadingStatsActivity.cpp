@@ -1,5 +1,6 @@
 #include "ReadingStatsActivity.h"
 
+#include <I18n.h>
 #include <Logging.h>
 #include <cstdio>
 #include <string>
@@ -17,6 +18,7 @@ constexpr int kHeatmapRows = 6;
 constexpr int kHeatmapDays = kHeatmapColumns * kHeatmapRows;
 constexpr int kHeatmapCellSize = 12;
 constexpr int kHeatmapGap = 2;
+constexpr int kTileHeight = 80;
 
 void formatNumber(const uint32_t value, char* out, const size_t outSize) {
   char digits[16];
@@ -89,7 +91,7 @@ void drawStatTile(GfxRenderer& renderer, int x, int y, int width, int height, co
 void ReadingStatsActivity::onEnter() {
   Activity::onEnter();
   LOG_INF("READING_STATS", "Opening reading stats");
-  render();
+  requestUpdate();
 }
 
 void ReadingStatsActivity::onExit() {
@@ -98,11 +100,9 @@ void ReadingStatsActivity::onExit() {
 }
 
 void ReadingStatsActivity::loop() {
-  mappedInput.update();
-
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    LOG_DBG("READING_STATS", "Back pressed, returning home");
-    onGoHome();
+    LOG_DBG("READING_STATS", "Back pressed, returning to previous screen");
+    finish();
   }
 }
 
@@ -123,11 +123,12 @@ void ReadingStatsActivity::render() {
   const int contentRight = screenWidth - marginRight - metrics.contentSidePadding;
   const int contentWidth = contentRight - contentLeft;
   const int lineHeight10 = renderer.getLineHeight(UI_10_FONT_ID);
-  const int hintHeight = renderer.getLineHeight(SMALL_FONT_ID);
   const int spacing = metrics.verticalSpacing;
+  const int tileGap = spacing;
+  const bool isLandscape = screenWidth >= screenHeight;
+  const int summaryHeight = isLandscape ? (kTileHeight + spacing + 2) : (kTileHeight * 2 + tileGap + spacing);
 
-  const int summaryHeight = (screenHeight >= screenWidth) ? 132 : 118;
-  const int streakHeight = STATS.hasEpoch() ? (lineHeight10 + 10) : (lineHeight10 + hintHeight + spacing + 12);
+  const int streakHeight = STATS.hasEpoch() ? (lineHeight10 + 10) : (lineHeight10 + renderer.getLineHeight(SMALL_FONT_ID) + spacing + 12);
   const int heatmapTitleHeight = lineHeight10 + 4;
   const int heatmapGridWidth = kHeatmapColumns * kHeatmapCellSize + (kHeatmapColumns - 1) * kHeatmapGap;
   const int heatmapGridHeight = kHeatmapRows * kHeatmapCellSize + (kHeatmapRows - 1) * kHeatmapGap;
@@ -135,10 +136,8 @@ void ReadingStatsActivity::render() {
   const int heatmapSectionTop =
       heatmapTop + summaryHeight + spacing + 2 + spacing + streakHeight + spacing;
   renderer.clearScreen();
-
-  const int tileGap = spacing;
-  const int tileWidth = (contentWidth - tileGap * (kSummaryColumns - 1)) / kSummaryColumns;
-  const int tileHeight = summaryHeight - spacing - 2;
+  const int tileWidth = isLandscape ? (contentWidth - tileGap * (kSummaryColumns - 1)) / kSummaryColumns
+                                    : (contentWidth - tileGap) / 2;
 
   char totalPages[24];
   char totalTime[24];
@@ -150,13 +149,23 @@ void ReadingStatsActivity::render() {
   std::snprintf(booksFinished, sizeof(booksFinished), "%u", static_cast<unsigned int>(STATS.getTotalBooksFinished()));
   formatAverageSession(STATS, averageSession, sizeof(averageSession));
 
-  drawStatTile(renderer, contentLeft, heatmapTop, tileWidth, tileHeight, "Total Pages", totalPages);
-  drawStatTile(renderer, contentLeft + (tileWidth + tileGap), heatmapTop, tileWidth, tileHeight, "Reading Time",
-               totalTime);
-  drawStatTile(renderer, contentLeft + (tileWidth + tileGap) * 2, heatmapTop, tileWidth, tileHeight, "Books Finished",
-               booksFinished);
-  drawStatTile(renderer, contentLeft + (tileWidth + tileGap) * 3, heatmapTop, tileWidth, tileHeight, "Avg Session",
-               averageSession);
+  if (isLandscape) {
+    drawStatTile(renderer, contentLeft, heatmapTop, tileWidth, kTileHeight, "Total Pages", totalPages);
+    drawStatTile(renderer, contentLeft + (tileWidth + tileGap), heatmapTop, tileWidth, kTileHeight, "Reading Time",
+                 totalTime);
+    drawStatTile(renderer, contentLeft + (tileWidth + tileGap) * 2, heatmapTop, tileWidth, kTileHeight,
+                 "Books Finished", booksFinished);
+    drawStatTile(renderer, contentLeft + (tileWidth + tileGap) * 3, heatmapTop, tileWidth, kTileHeight,
+                 "Avg Session", averageSession);
+  } else {
+    const int secondRowY = heatmapTop + kTileHeight + tileGap;
+    drawStatTile(renderer, contentLeft, heatmapTop, tileWidth, kTileHeight, "Total Pages", totalPages);
+    drawStatTile(renderer, contentLeft + tileWidth + tileGap, heatmapTop, tileWidth, kTileHeight, "Reading Time",
+                 totalTime);
+    drawStatTile(renderer, contentLeft, secondRowY, tileWidth, kTileHeight, "Books Finished", booksFinished);
+    drawStatTile(renderer, contentLeft + tileWidth + tileGap, secondRowY, tileWidth, kTileHeight, "Avg Session",
+                 averageSession);
+  }
 
   const int summaryDividerY = heatmapTop + summaryHeight;
   renderer.drawLine(contentLeft, summaryDividerY, contentRight, summaryDividerY, true);
@@ -216,11 +225,8 @@ void ReadingStatsActivity::render() {
     }
   }
 
-  const char* hint = "Back to return";
-  const int hintWidth = renderer.getTextWidth(SMALL_FONT_ID, hint);
-  const int hintX = (screenWidth - hintWidth) / 2;
-  const int hintY = screenHeight - marginBottom - hintHeight - spacing;
-  renderer.drawText(SMALL_FONT_ID, hintX, hintY, hint);
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   renderer.displayBuffer();
 }
