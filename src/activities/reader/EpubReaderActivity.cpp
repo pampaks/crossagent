@@ -1,5 +1,7 @@
 #include "EpubReaderActivity.h"
 
+#include <new>
+
 #include <Epub/Page.h>
 #include <Epub/blocks/TextBlock.h>
 #include <FontCacheManager.h>
@@ -501,11 +503,20 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn) {
   requestUpdate();
 }
 
-// TODO: Failure handling
 void EpubReaderActivity::render(RenderLock&& lock) {
   if (!epub) {
     return;
   }
+
+  const auto handleLoadFailure = [this]() {
+    loadFailCount++;
+    if (loadFailCount < 3) {
+      requestUpdate();
+      return;
+    }
+    loadFailCount = 0;
+    onGoHome();
+  };
 
   // edge case handling for sub-zero spine index
   if (currentSpineIndex < 0) {
@@ -551,7 +562,13 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (!section) {
     const auto filepath = epub->getSpineItem(currentSpineIndex).href;
     LOG_DBG("ERS", "Loading file: %s, index: %d", filepath.c_str(), currentSpineIndex);
-    section = std::unique_ptr<Section>(new Section(epub, currentSpineIndex, renderer));
+    section = std::unique_ptr<Section>(new (std::nothrow) Section(epub, currentSpineIndex, renderer));
+    if (!section) {
+      LOG_ERR("ERS", "Failed to allocate section");
+      handleLoadFailure();
+      automaticPageTurnActive = false;
+      return;
+    }
 
     if (!section->loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
                                   SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, viewportWidth,
@@ -567,6 +584,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
                                       SETTINGS.imageRendering, popupFn)) {
         LOG_ERR("ERS", "Failed to persist page data to SD");
         section.reset();
+        handleLoadFailure();
+        automaticPageTurnActive = false;
         return;
       }
     } else {
@@ -613,11 +632,10 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   renderer.clearScreen();
 
-  if (section->pageCount == 0) {
+  if (!section || section->pageCount == 0) {
     LOG_DBG("ERS", "No pages to render");
-    renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_EMPTY_CHAPTER), true, EpdFontFamily::BOLD);
-    renderStatusBar();
-    renderer.displayBuffer();
+    section.reset();
+    handleLoadFailure();
     automaticPageTurnActive = false;
     return;
   }
@@ -637,8 +655,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       LOG_ERR("ERS", "Failed to load page from SD - clearing section cache");
       section->clearCache();
       section.reset();
-      requestUpdate();  // Try again after clearing cache
-                        // TODO: prevent infinite loop if the page keeps failing to load for some reason
+      handleLoadFailure();
       automaticPageTurnActive = false;
       return;
     }
@@ -652,6 +669,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   }
   silentIndexNextChapterIfNeeded(viewportWidth, viewportHeight);
   saveProgress(currentSpineIndex, section->currentPage, section->pageCount);
+  loadFailCount = 0;
 
   if (pendingScreenshot) {
     pendingScreenshot = false;
