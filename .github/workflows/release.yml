@@ -34,11 +34,12 @@ jobs:
       - name: Stage release assets
         run: |
           mkdir -p release-assets
-          cp .pio/build/gh_release/bootloader.bin  release-assets/
-          cp .pio/build/gh_release/firmware.bin    release-assets/
-          cp .pio/build/gh_release/firmware.elf    release-assets/
-          cp .pio/build/gh_release/firmware.map    release-assets/
-          cp .pio/build/gh_release/partitions.bin  release-assets/
+          TAG=${{ github.ref_name }}
+          cp .pio/build/gh_release/bootloader.bin  release-assets/crosspoint-${TAG}-bootloader.bin
+          cp .pio/build/gh_release/firmware.bin    release-assets/crosspoint-${TAG}.bin
+          cp .pio/build/gh_release/firmware.elf    release-assets/crosspoint-${TAG}.elf
+          cp .pio/build/gh_release/firmware.map    release-assets/crosspoint-${TAG}.map
+          cp .pio/build/gh_release/partitions.bin  release-assets/crosspoint-${TAG}-partitions.bin
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
