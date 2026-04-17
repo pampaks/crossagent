@@ -7,6 +7,7 @@
 #include <Serialization.h>
 #include <Utf8.h>
 
+#include "ReadingStats.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "MappedInputManager.h"
@@ -40,11 +41,15 @@ void TxtReaderActivity::onEnter() {
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(filePath, fileName, "", "");
 
+  STATS.onSessionStart();
+
   // Trigger first update
   requestUpdate();
 }
 
 void TxtReaderActivity::onExit() {
+  STATS.onSessionEnd();
+
   Activity::onExit();
 
   // Reset orientation back to portrait for the rest of the UI
@@ -78,12 +83,15 @@ void TxtReaderActivity::loop() {
 
   if (prevTriggered && currentPage > 0) {
     currentPage--;
+    STATS.onPageTurn();
     requestUpdate();
   } else if (nextTriggered) {
     if (currentPage < totalPages - 1) {
       currentPage++;
+      STATS.onPageTurn();
       requestUpdate();
     } else {
+      STATS.onBookFinished();
       onGoHome();
     }
   }

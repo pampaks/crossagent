@@ -4,6 +4,9 @@ on:
     tags:
       - '*'
 
+permissions:
+  contents: write
+
 jobs:
   build-release:
     runs-on: ubuntu-latest
@@ -28,13 +31,18 @@ jobs:
       - name: Build CrossPoint
         run: pio run -e gh_release
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Stage release assets
+        run: |
+          mkdir -p release-assets
+          cp .pio/build/gh_release/bootloader.bin  release-assets/
+          cp .pio/build/gh_release/firmware.bin    release-assets/
+          cp .pio/build/gh_release/firmware.elf    release-assets/
+          cp .pio/build/gh_release/firmware.map    release-assets/
+          cp .pio/build/gh_release/partitions.bin  release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: CrossPoint-${{ github.ref_name }}
-          path: |
-            .pio/build/gh_release/bootloader.bin
-            .pio/build/gh_release/firmware.bin
-            .pio/build/gh_release/firmware.elf
-            .pio/build/gh_release/firmware.map
-            .pio/build/gh_release/partitions.bin
+          name: CrossPoint ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/*

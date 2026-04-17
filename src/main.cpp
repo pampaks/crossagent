@@ -20,6 +20,7 @@
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
+#include "ReadingStats.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
 #include "components/UITheme.h"
@@ -287,6 +288,7 @@ void setup() {
   activityManager.goToBoot();
 
   APP_STATE.loadFromFile();
+  ReadingStats::getInstance().loadFromFile();
   RECENT_BOOKS.loadFromFile();
 
   if (HalSystem::isRebootFromPanic()) {

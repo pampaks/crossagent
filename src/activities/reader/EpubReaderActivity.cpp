@@ -10,6 +10,7 @@
 #include <Logging.h>
 #include <esp_system.h>
 
+#include "ReadingStats.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderChapterSelectionActivity.h"
@@ -85,11 +86,15 @@ void EpubReaderActivity::onEnter() {
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
 
+  STATS.onSessionStart();
+
   // Trigger first update
   requestUpdate();
 }
 
 void EpubReaderActivity::onExit() {
+  STATS.onSessionEnd();
+
   Activity::onExit();
 
   // Reset orientation back to portrait for the rest of the UI
@@ -183,6 +188,7 @@ void EpubReaderActivity::loop() {
   // At end of the book, forward button goes home and back button returns to last page
   if (currentSpineIndex > 0 && currentSpineIndex >= epub->getSpineItemsCount()) {
     if (nextTriggered) {
+      STATS.onBookFinished();
       onGoHome();
     } else {
       currentSpineIndex = epub->getSpineItemsCount() - 1;
@@ -490,6 +496,7 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn) {
       }
     }
   }
+  STATS.onPageTurn();
   lastPageTurnTime = millis();
   requestUpdate();
 }
@@ -832,6 +839,16 @@ void EpubReaderActivity::renderStatusBar() const {
 
   } else if (SETTINGS.statusBarTitle == CrossPointSettings::STATUS_BAR_TITLE::BOOK_TITLE) {
     title = epub->getTitle();
+  }
+
+  if (!automaticPageTurnActive) {
+    int pagesLeft = section->pageCount - section->currentPage - 1;
+    int minsLeft = STATS.estimateMinutesRemaining(pagesLeft);
+    if (minsLeft > 0) {
+      if (title.empty()) {
+        title = std::to_string(minsLeft) + " min left";
+      }
+    }
   }
 
   GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title, 0, textYOffset);

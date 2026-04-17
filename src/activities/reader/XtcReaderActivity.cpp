@@ -12,6 +12,7 @@
 #include <HalStorage.h>
 #include <I18n.h>
 
+#include "ReadingStats.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "MappedInputManager.h"
@@ -42,11 +43,15 @@ void XtcReaderActivity::onEnter() {
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(xtc->getPath(), xtc->getTitle(), xtc->getAuthor(), xtc->getThumbBmpPath());
 
+  STATS.onSessionStart();
+
   // Trigger first update
   requestUpdate();
 }
 
 void XtcReaderActivity::onExit() {
+  STATS.onSessionEnd();
+
   Activity::onExit();
 
   APP_STATE.readerActivityLoadCount = 0;
@@ -118,12 +123,14 @@ void XtcReaderActivity::loop() {
     } else {
       currentPage = 0;
     }
+    STATS.onPageTurn();
     requestUpdate();
   } else if (nextTriggered) {
     currentPage += skipAmount;
     if (currentPage >= xtc->getPageCount()) {
       currentPage = xtc->getPageCount();  // Allow showing "End of book"
     }
+    STATS.onPageTurn();
     requestUpdate();
   }
 }
