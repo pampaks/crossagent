@@ -31,7 +31,7 @@ git merge --no-ff <upstream-commit>   # pin a commit, develop moves daily
 
 New files (not in upstream):
 
-- `src/ReadingStats.{h,cpp}`: reading statistics store (`PersistableStore`, `/.crosspoint/reading_stats.json`)
+- `src/ReadingStats.{h,cpp}`: reading statistics store (`PersistableStore`, `/.crosspoint/reading_stats.json`); counts each finished book once (a persisted ring of the last 64 finished-book hashes)
 - `src/activities/home/ReadingStatsActivity.{h,cpp}`: stats screen (tiles, streaks, 90-day heatmap)
 - `.envrc`: direnv activation of the uv-managed `.venv`
 - `FORK.md`
@@ -41,7 +41,7 @@ Hooks into upstream files:
 - `src/main.cpp`: `STATS.loadFromFile()` at boot
 - `src/activities/reader/ReaderActivity.{h,cpp}`: session start/end, page turns, book finished, last-read progress (`getPagesLeft`)
 - `src/activities/reader/EpubReaderActivity.{h,cpp}`, `XtcReaderActivity.{h,cpp}`: `getPagesLeft`; EPUB status bar "N min left" when the title is hidden
-- `src/activities/ActivityManager.h`, `src/activities/home/HomeActivity.{h,cpp}`: Reading Stats entry (classic home only; the cover-grid home has a fixed five-tab array)
+- `src/activities/ActivityManager.h`, `src/activities/home/HomeActivity.{h,cpp}`: Reading Stats entry, shown only on the classic list home when there is no OPDS/Plugins row (the cover-grid home has a fixed five-tab array and a sixth list row overlaps the button hints)
 - `src/activities/settings/SettingsActivity.{h,cpp}`: Reading Stats entry under System
 - `src/components/themes/lyra/LyraTheme.cpp`: time-left lines on the home book card
 
@@ -75,5 +75,7 @@ git diff --name-status <upstream-commit> HEAD   # should list only the fork delt
 
 - "Avg. Session" and the time-left estimates average a whole session, so idle time with the book open inflates them.
 - The home card time-left lines are shown only in the Lyra theme and only for the last book read.
+- The Home menu entry is hidden when an OPDS or Plugins row is present; Settings > Reading Stats is always available.
+- The stats screen draws its tiles directly instead of through the GUI theme helpers.
 - Only English has the new strings; other languages fall back to English, and `STR_CROSSPOINT` is still "CrossPoint" in them.
 - Web UI titles, the Wi-Fi hostname, USB product strings and User-Agent strings still say "CrossPoint".
