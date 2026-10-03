@@ -3,6 +3,7 @@
 #include <I18n.h>
 #include <Logging.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -108,15 +109,20 @@ void ReadingStatsActivity::render() {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
+  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true);
 
-  int marginTop = 0;
-  int marginRight = 0;
-  int marginBottom = 0;
-  int marginLeft = 0;
-  renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
+  int bezelTop = 0;
+  int bezelRight = 0;
+  int bezelBottom = 0;
+  int bezelLeft = 0;
+  renderer.getOrientedViewableTRBL(&bezelTop, &bezelRight, &bezelBottom, &bezelLeft);
 
-  const int contentLeft = marginLeft + metrics.contentSidePadding;
-  const int contentRight = screenWidth - marginRight - metrics.contentSidePadding;
+  const int leftEdge = std::max(safe.x, bezelLeft);
+  const int rightEdge = std::min(safe.x + safe.width, screenWidth - bezelRight);
+  const int topEdge = std::max(safe.y, bezelTop);
+  const int bottomEdge = std::min(safe.y + safe.height, screenHeight - bezelBottom);
+  const int contentLeft = leftEdge + metrics.contentSidePadding;
+  const int contentRight = rightEdge - metrics.contentSidePadding;
   const int contentWidth = contentRight - contentLeft;
   const int lineHeight10 = renderer.getLineHeight(UI_10_FONT_ID);
   const int spacing = metrics.verticalSpacing;
@@ -130,7 +136,7 @@ void ReadingStatsActivity::render() {
   const int heatmapTitleHeight = lineHeight10 + 4;
   const int heatmapGridWidth = kHeatmapColumns * kHeatmapCellSize + (kHeatmapColumns - 1) * kHeatmapGap;
   const int heatmapGridHeight = kHeatmapRows * kHeatmapCellSize + (kHeatmapRows - 1) * kHeatmapGap;
-  const int heatmapTop = marginTop + spacing;
+  const int heatmapTop = topEdge + spacing;
   const int heatmapSectionTop = heatmapTop + summaryHeight + spacing + 2 + spacing + streakHeight + spacing;
   renderer.clearScreen();
   const int tileWidth =
@@ -191,6 +197,9 @@ void ReadingStatsActivity::render() {
 
   const int gridX = contentLeft + ((contentWidth - heatmapGridWidth) / 2);
   const int gridY = heatmapSectionTop + heatmapTitleHeight + spacing;
+  if (gridY + heatmapGridHeight > bottomEdge) {
+    LOG_DBG("READING_STATS", "Heatmap extends beyond safe bottom edge");
+  }
   const auto& dailyLog = STATS.getDailyLog();
   const uint32_t todayIndex = STATS.todayIndex();
   const uint32_t anchorDayIndex = todayIndex != 0U ? todayIndex : (dailyLog.empty() ? 0U : dailyLog.front().dayIndex);
