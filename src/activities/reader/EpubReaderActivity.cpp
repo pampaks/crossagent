@@ -1937,7 +1937,7 @@ void EpubReaderActivity::renderStatusBar() const {
     }
   } else if (sb.titleMode == CrossPointSettings::STATUS_BAR_TITLE::BOOK_TITLE) {
     title = epub ? epub->getTitle() : "";
-  } else if (!sb.showsTitle() && section) {
+  } else if (!sb.showsTitle() && sb.textLaneVisible(true) && section) {
     int chapterPagesLeft;
     int bookPagesLeft;
     if (getPagesLeft(chapterPagesLeft, bookPagesLeft)) {
