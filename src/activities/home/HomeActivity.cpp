@@ -29,7 +29,7 @@
 
 int HomeActivity::getMenuItemCount() const {
   int count = 4;  // File Browser, Library, File transfer, Settings
-  if (!coverGridUi) {
+  if (showsReadingStats()) {
     count++;
   }
   if (!recentBooks.empty()) {
@@ -253,7 +253,7 @@ void HomeActivity::onEnter() {
   const auto base = static_cast<int>(recentBooks.size());
   selectorIndex = initialMenuItem == HomeMenuItem::NONE
                       ? 0
-                      : base + menuItemToIndex(initialMenuItem, hasLibrarySlot(), !coverGridUi);
+                      : base + menuItemToIndex(initialMenuItem, hasLibrarySlot(), showsReadingStats());
 
   // Trigger first update
   requestUpdate();
@@ -314,7 +314,7 @@ void HomeActivity::loop() {
       return;
     }
     const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
-    switch (indexToMenuItem(menuIndex, hasLibrarySlot(), !coverGridUi)) {
+    switch (indexToMenuItem(menuIndex, hasLibrarySlot(), showsReadingStats())) {
       case HomeMenuItem::FILE_BROWSER:
         onFileBrowserOpen();
         break;
@@ -518,13 +518,16 @@ void HomeActivity::render(RenderLock&&) {
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
   // Build menu items dynamically
-  std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_LIBRARY), tr(STR_READING_STATS),
-                                        tr(STR_FILE_TRANSFER), tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Folder, Library, Recent, Transfer, Settings};
+  std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_LIBRARY), tr(STR_FILE_TRANSFER),
+                                        tr(STR_SETTINGS_TITLE)};
+  std::vector<UIIcon> menuIcons = {Folder, Library, Transfer, Settings};
 
   if (hasLibrarySlot()) {
     menuItems.insert(menuItems.begin() + 2, hasPlugins ? tr(STR_PLUGINS) : tr(STR_OPDS_BROWSER));
     menuIcons.insert(menuIcons.begin() + 2, Plugins);
+  } else if (showsReadingStats()) {
+    menuItems.insert(menuItems.begin() + 2, tr(STR_READING_STATS));
+    menuIcons.insert(menuIcons.begin() + 2, Recent);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {

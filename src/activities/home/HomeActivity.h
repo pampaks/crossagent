@@ -22,6 +22,10 @@ class HomeActivity final : public Activity {
   // The home "library" slot (index 2) shows Plugins when any plugin is
   // installed, otherwise OPDS. The index converters gate on its presence.
   bool hasLibrarySlot() const { return hasPlugins || hasOpdsServers; }
+  // The Reading Stats row is only added when the list still fits: the cover-grid
+  // home has a fixed tab array and a sixth list row overlaps the button hints.
+  // Settings > Reading Stats stays available either way.
+  bool showsReadingStats() const { return !coverGridUi && !hasLibrarySlot(); }
   bool hasContinueReading = false;
   bool coverRendered = false;      // Track if cover has been rendered once
   bool coverBufferStored = false;  // Track if cover buffer is stored
