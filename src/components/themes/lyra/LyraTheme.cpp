@@ -8,9 +8,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
+#include "ReadingStats.h"
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "components/icons/blocks.h"
@@ -34,6 +36,7 @@ constexpr int topHintButtonY = 345;
 constexpr int maxListValueWidth = 200;
 constexpr int mainMenuIconSize = 32;
 constexpr int mainMenuColumns = 2;
+constexpr int etaTextBufferSize = 48;
 int coverWidth = 0;
 
 const uint8_t* iconForName(UIIcon icon) {
@@ -281,13 +284,52 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
                                hPaddingInSelection, cornerRadius, false, false, true, true, Color::LightGray);
     }
 
-    auto titleLines = renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), textWidth, 3, EpdFontFamily::BOLD);
+    char chapterEta[etaTextBufferSize] = {};
+    char bookEta[etaTextBufferSize] = {};
+    const char* etaLines[2] = {};
+    int etaLineCount = 0;
+
+    if (!book.path.empty() && ReadingStats::hashBookPath(book.path.c_str()) == STATS.getLastBookHash()) {
+      const int32_t chapterPagesLeft = STATS.getLastChapterPagesLeft();
+      if (chapterPagesLeft >= 0) {
+        const int chapterMinutes = STATS.estimateMinutesRemaining(chapterPagesLeft);
+        if (chapterMinutes > 0) {
+          if (chapterMinutes < 60) {
+            snprintf(chapterEta, sizeof(chapterEta), tr(STR_STATS_ETA_CHAPTER_FORMAT), chapterMinutes);
+          } else {
+            snprintf(chapterEta, sizeof(chapterEta), tr(STR_STATS_ETA_CHAPTER_HM_FORMAT), chapterMinutes / 60,
+                     chapterMinutes % 60);
+          }
+          etaLines[etaLineCount++] = chapterEta;
+        }
+      }
+
+      const int32_t bookPagesLeft = STATS.getLastBookPagesLeft();
+      if (bookPagesLeft >= 0) {
+        const int bookMinutes = STATS.estimateMinutesRemaining(bookPagesLeft);
+        if (bookMinutes > 0) {
+          if (bookMinutes < 60) {
+            snprintf(bookEta, sizeof(bookEta), tr(STR_STATS_ETA_BOOK_FORMAT), bookMinutes);
+          } else {
+            snprintf(bookEta, sizeof(bookEta), tr(STR_STATS_ETA_BOOK_HM_FORMAT), bookMinutes / 60, bookMinutes % 60);
+          }
+          etaLines[etaLineCount++] = bookEta;
+        }
+      }
+    }
+
+    const int titleMaxLines = etaLineCount > 0 ? 2 : 3;
+    auto titleLines =
+        renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), textWidth, titleMaxLines, EpdFontFamily::BOLD);
 
     auto author = renderer.truncatedText(UI_10_FONT_ID, book.author.c_str(), textWidth);
     const int titleLineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+    const int authorLineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+    const int etaLineHeight = renderer.getLineHeight(SMALL_FONT_ID);
     const int titleBlockHeight = titleLineHeight * static_cast<int>(titleLines.size());
-    const int authorHeight = book.author.empty() ? 0 : (renderer.getLineHeight(UI_10_FONT_ID) * 3 / 2);
-    const int totalBlockHeight = titleBlockHeight + authorHeight;
+    const int authorHeight = book.author.empty() ? 0 : (authorLineHeight * 3 / 2);
+    const int etaHeight = etaLineHeight * etaLineCount;
+    const int totalBlockHeight = titleBlockHeight + authorHeight + etaHeight;
     int titleY = tileY + tileHeight / 2 - totalBlockHeight / 2;
     const int textX = tileX + hPaddingInSelection + coverWidth + LyraMetrics::values.verticalSpacing;
     for (const auto& line : titleLines) {
@@ -295,8 +337,14 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
       titleY += titleLineHeight;
     }
     if (!book.author.empty()) {
-      titleY += renderer.getLineHeight(UI_10_FONT_ID) / 2;
+      titleY += authorLineHeight / 2;
       renderer.drawText(UI_10_FONT_ID, textX, titleY, author.c_str(), true);
+      titleY += authorLineHeight;
+    }
+    for (int i = 0; i < etaLineCount; ++i) {
+      auto eta = renderer.truncatedText(SMALL_FONT_ID, etaLines[i], textWidth);
+      renderer.drawText(SMALL_FONT_ID, textX, titleY, eta.c_str(), true);
+      titleY += etaLineHeight;
     }
   } else {
     drawEmptyRecents(renderer, rect);
