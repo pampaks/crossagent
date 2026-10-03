@@ -17,6 +17,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -40,6 +41,7 @@
 #include "ReaderFontSizes.h"
 #include "ReaderToolbarUi.h"
 #include "ReaderUtils.h"
+#include "ReadingStats.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "SilentRestart.h"
@@ -1914,6 +1916,7 @@ void EpubReaderActivity::renderStatusBar() const {
   const float bookProgress = epub ? (epub->calculateProgress(currentSpineIndex, sectionChapterProg) * 100) : 0;
 
   std::string title;
+  char statsTitle[32] = "";
   int textYOffset = 0;
   const auto sb = SETTINGS.statusBarSpec();
 
@@ -1934,10 +1937,20 @@ void EpubReaderActivity::renderStatusBar() const {
     }
   } else if (sb.titleMode == CrossPointSettings::STATUS_BAR_TITLE::BOOK_TITLE) {
     title = epub ? epub->getTitle() : "";
+  } else if (!sb.showsTitle() && section) {
+    int chapterPagesLeft;
+    int bookPagesLeft;
+    if (getPagesLeft(chapterPagesLeft, bookPagesLeft)) {
+      const int minutesLeft = STATS.estimateMinutesRemaining(chapterPagesLeft);
+      if (minutesLeft > 0) {
+        snprintf(statsTitle, sizeof(statsTitle), tr(STR_STATS_MIN_LEFT_FORMAT), minutesLeft);
+      }
+    }
   }
 
-  GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title, 0, textYOffset, true, currentPageBookmarked,
-                    section ? section->isBuilding() : false);
+  const char* statusTitle = statsTitle[0] != '\0' ? statsTitle : title.c_str();
+  GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, statusTitle, 0, textYOffset, true,
+                    currentPageBookmarked, section ? section->isBuilding() : false);
 }
 
 // ---------------------------------------------------------------------------
@@ -2879,6 +2892,30 @@ int EpubReaderActivity::getProgressBasisPoints() const {
   const int basisPoints =
       static_cast<int>(epub->calculateProgress(currentSpineIndex, chapterProgress) * 10000.0f + 0.5f);
   return std::clamp(basisPoints, 0, 10000);
+}
+
+bool EpubReaderActivity::getPagesLeft(int& chapterPagesLeft, int& bookPagesLeft) const {
+  if (!epub || !section || epub->getBookSize() == 0 || currentSpineIndex < 0 ||
+      currentSpineIndex >= epub->getSpineItemsCount()) {
+    return false;
+  }
+
+  const int pagesInChapter = section->estimatedTotalPages();
+  if (pagesInChapter <= 0) return false;
+
+  chapterPagesLeft = std::max(0, pagesInChapter - section->currentPage);
+  const float progressAtChapterStart = epub->calculateProgress(currentSpineIndex, 0.0f);
+  const float progressAtChapterEnd = epub->calculateProgress(currentSpineIndex, 1.0f);
+  const float chapterProgressSpan = progressAtChapterEnd - progressAtChapterStart;
+  if (!(chapterProgressSpan > 0.0f)) return false;
+
+  const float pagesTotalEstimate = static_cast<float>(pagesInChapter) / chapterProgressSpan;
+  if (!(pagesTotalEstimate > 0.0f)) return false;
+
+  const int remainingAfterChapter =
+      std::max(0, static_cast<int>(lroundf(std::max(0.0f, 1.0f - progressAtChapterEnd) * pagesTotalEstimate)));
+  bookPagesLeft = chapterPagesLeft + remainingAfterChapter;
+  return true;
 }
 
 CrossPointPosition EpubReaderActivity::getCurrentPosition() const {

@@ -15,6 +15,7 @@
 #include "CrossPointState.h"
 #include "EpubReaderActivity.h"
 #include "ReaderUtils.h"
+#include "ReadingStats.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "XtcReaderActivity.h"
@@ -52,6 +53,12 @@ void ReaderActivity::disableFastInitialRefresh() { pagesUntilFullRefresh = 0; }
 void ReaderActivity::notePageTurn(const bool forward, const bool succeeded) {
   RenderLock lock(*this);
   readerSession.noteTurn(forward, succeeded);
+  if (!succeeded) return;
+  STATS.onPageTurn();
+  if (forward && !statsBookFinished && isAtEndOfBook()) {
+    statsBookFinished = true;
+    STATS.onBookFinished();
+  }
 }
 
 void ReaderActivity::onEnter() {
@@ -81,6 +88,7 @@ void ReaderActivity::onEnter() {
     return;
   }
 
+  STATS.onSessionStart();
   requestUpdate();
 }
 
@@ -96,6 +104,7 @@ void ReaderActivity::rememberBookOnceRendered() {
 
 void ReaderActivity::onExit() {
   Activity::onExit();
+  STATS.onSessionEnd();
 
   // Keep rebuildable font buffers from pinning the heap between reading sessions.
   if (auto* fontCache = renderer.getFontCacheManager()) {
@@ -271,11 +280,17 @@ void ReaderActivity::render(RenderLock&&) {
     renderer.displayBuffer();
     onEndOfBookRendered();
     markPageRendered();
+    STATS.setLastProgress(ReadingStats::hashBookPath(bookPath.c_str()), 0, 0);
     readerSession.onRenderComplete(millis(), trustedtime::trustedNow(), getProgressBasisPoints());
     return;
   }
 
   renderBook();
+  int chapterPagesLeft;
+  int bookPagesLeft;
+  if (getPagesLeft(chapterPagesLeft, bookPagesLeft)) {
+    STATS.setLastProgress(ReadingStats::hashBookPath(bookPath.c_str()), chapterPagesLeft, bookPagesLeft);
+  }
   readerSession.onRenderComplete(millis(), trustedtime::trustedNow(), getProgressBasisPoints());
 }
 

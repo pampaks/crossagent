@@ -319,6 +319,13 @@ bool XtcReaderActivity::skipPages(int amount) {
 
 bool XtcReaderActivity::isAtEndOfBook() const { return xtc && currentPage >= xtc->getPageCount(); }
 
+bool XtcReaderActivity::getPagesLeft(int& chapterPagesLeft, int& bookPagesLeft) const {
+  if (!xtc) return false;
+  chapterPagesLeft = -1;
+  bookPagesLeft = std::max(0, static_cast<int>(xtc->getPageCount()) - static_cast<int>(currentPage) - 1);
+  return true;
+}
+
 void XtcReaderActivity::onReturnFromEndOfBook() {
   if (xtc && xtc->getPageCount() > 0) {
     currentPage = xtc->getPageCount() - 1;
