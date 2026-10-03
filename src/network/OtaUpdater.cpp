@@ -18,8 +18,12 @@
 #include "FirmwareBoardTag.h"
 #include "FirmwareFlasher.h"
 
+#ifndef CROSSPOINT_RELEASE_REPO
+#error "CROSSPOINT_RELEASE_REPO (owner/name) must be set in platformio.ini [base] build_flags"
+#endif
+
 namespace {
-constexpr char latestReleaseUrl[] = "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest";
+constexpr char latestReleaseUrl[] = "https://api.github.com/repos/" CROSSPOINT_RELEASE_REPO "/releases/latest";
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
