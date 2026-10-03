@@ -41,10 +41,15 @@ void ReadingStats::toJson(JsonDocument& doc) const {
   doc["sc"] = sessionCount;
   doc["lad"] = lastActiveDayIndex;
   doc["asp"] = avgSecondsPerPage;
-  doc["lsed"] = lastSessionEndUnixDay;
   doc["cpl"] = lastChapterPagesLeft;
   doc["bpl"] = lastBookPagesLeft;
   doc["lbh"] = lastBookHash;
+
+  JsonArray finishedBooks = doc["fb"].to<JsonArray>();
+  const size_t oldestIndex = finishedBookCount < MAX_FINISHED_BOOKS ? 0 : finishedBookNextIndex;
+  for (size_t i = 0; i < finishedBookCount; i++) {
+    finishedBooks.add(finishedBookHashes[(oldestIndex + i) % MAX_FINISHED_BOOKS]);
+  }
 
   JsonArray logArray = doc["log"].to<JsonArray>();
   for (const DayEntry& entry : dailyLog) {
@@ -65,19 +70,24 @@ bool ReadingStats::fromJson(JsonVariantConst doc) {
   lastChapterPagesLeft = doc["cpl"] | static_cast<int32_t>(-1);
   lastBookPagesLeft = doc["bpl"] | static_cast<int32_t>(-1);
 
+  JsonArrayConst finishedBooks = doc["fb"].as<JsonArrayConst>();
+  finishedBookCount = static_cast<uint8_t>(std::min<size_t>(finishedBooks.size(), MAX_FINISHED_BOOKS));
+  for (size_t i = 0; i < finishedBookCount; i++) {
+    finishedBookHashes[i] = finishedBooks[i] | static_cast<uint32_t>(0);
+  }
+  finishedBookNextIndex = finishedBookCount % MAX_FINISHED_BOOKS;
+
   const uint32_t version = doc["v"] | static_cast<uint32_t>(0);
   const bool legacyFormat = version < FORMAT_VERSION;
   if (legacyFormat) {
     currentStreakDays = 0;
     longestStreakDays = 0;
     lastActiveDayIndex = 0;
-    lastSessionEndUnixDay = 0;
     requestResave();
   } else {
     currentStreakDays = doc["cs"] | static_cast<uint16_t>(0);
     longestStreakDays = doc["ls"] | static_cast<uint16_t>(0);
     lastActiveDayIndex = doc["lad"] | static_cast<uint32_t>(0);
-    lastSessionEndUnixDay = doc["lsed"] | static_cast<uint32_t>(0);
   }
 
   dailyLog.clear();
@@ -121,14 +131,32 @@ void ReadingStats::onPageTurn() {
   }
   totalPagesRead++;
 
-  DayEntry* entry = findOrCreateDay(currentDayIndex());
+  const uint32_t today = currentDayIndex();
+  DayEntry* entry = findOrCreateDay(today);
+  updateStreak(today);
   if (entry != nullptr && entry->pages < UINT16_MAX) {
     entry->pages++;
   }
 }
 
-void ReadingStats::onBookFinished() {
-  totalBooksFinished++;
+void ReadingStats::onBookFinished(uint32_t bookHash) {
+  if (bookHash != 0) {
+    for (size_t i = 0; i < finishedBookCount; i++) {
+      if (finishedBookHashes[i] == bookHash) {
+        return;
+      }
+    }
+  }
+  if (totalBooksFinished < UINT16_MAX) {
+    totalBooksFinished++;
+  }
+  if (bookHash != 0) {
+    finishedBookHashes[finishedBookNextIndex] = bookHash;
+    finishedBookNextIndex = (finishedBookNextIndex + 1) % MAX_FINISHED_BOOKS;
+    if (finishedBookCount < MAX_FINISHED_BOOKS) {
+      finishedBookCount++;
+    }
+  }
   saveToFile();
 }
 
@@ -140,21 +168,16 @@ void ReadingStats::onSessionEnd() {
   const uint32_t sessionSeconds = (static_cast<uint32_t>(millis()) - sessionStartMs) / 1000u;
   totalReadingSeconds += sessionSeconds;
 
-  const uint32_t trustedDay = todayIndex();
-  if (trustedDay != 0) {
-    lastSessionEndUnixDay = trustedDay;
-  }
-  const uint32_t dayIndex = trustedDay != 0 ? trustedDay : lastSessionEndUnixDay;
-
-  if (dayIndex != 0) {
-    DayEntry* entry = findOrCreateDay(dayIndex);
-    if (entry != nullptr) {
-      const uint32_t sessionMinutes = sessionSeconds / 60u;
-      const uint32_t updatedMinutes = static_cast<uint32_t>(entry->minutes) + sessionMinutes;
-      entry->minutes = static_cast<uint16_t>(std::min<uint32_t>(updatedMinutes, UINT16_MAX));
+  const uint32_t today = todayIndex();
+  if (sessionPageCount > 0 && today != 0) {
+    for (DayEntry& entry : dailyLog) {
+      if (entry.dayIndex == today) {
+        const uint32_t sessionMinutes = sessionSeconds / 60u;
+        const uint32_t updatedMinutes = static_cast<uint32_t>(entry.minutes) + sessionMinutes;
+        entry.minutes = static_cast<uint16_t>(std::min<uint32_t>(updatedMinutes, UINT16_MAX));
+        break;
+      }
     }
-
-    updateStreak(dayIndex);
   }
 
   if (sessionPageCount >= MIN_TIMED_PAGE_TURNS && sessionSeconds > 0) {
@@ -214,7 +237,13 @@ uint32_t ReadingStats::getTotalReadingSeconds() const { return totalReadingSecon
 
 uint16_t ReadingStats::getTotalBooksFinished() const { return totalBooksFinished; }
 
-uint16_t ReadingStats::getCurrentStreakDays() const { return currentStreakDays; }
+uint16_t ReadingStats::getCurrentStreakDays() const {
+  const uint32_t today = todayIndex();
+  if (today != 0 && lastActiveDayIndex != 0 && today > lastActiveDayIndex + 1) {
+    return 0;
+  }
+  return currentStreakDays;
+}
 
 uint16_t ReadingStats::getLongestStreakDays() const { return longestStreakDays; }
 
@@ -244,13 +273,7 @@ uint32_t ReadingStats::todayIndex() {
 
 const std::vector<ReadingStats::DayEntry>& ReadingStats::getDailyLog() const { return dailyLog; }
 
-uint32_t ReadingStats::currentDayIndex() const {
-  const uint32_t trustedDay = todayIndex();
-  if (trustedDay != 0) {
-    return trustedDay;
-  }
-  return lastSessionEndUnixDay;
-}
+uint32_t ReadingStats::currentDayIndex() const { return todayIndex(); }
 
 void ReadingStats::updateStreak(uint32_t dayIdx) {
   if (dayIdx == 0 || dayIdx == lastActiveDayIndex) {
@@ -258,7 +281,9 @@ void ReadingStats::updateStreak(uint32_t dayIdx) {
   }
 
   if (lastActiveDayIndex != 0 && dayIdx == lastActiveDayIndex + 1) {
-    currentStreakDays++;
+    if (currentStreakDays < UINT16_MAX) {
+      currentStreakDays++;
+    }
   } else {
     currentStreakDays = 1;
   }

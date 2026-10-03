@@ -57,7 +57,7 @@ void ReaderActivity::notePageTurn(const bool forward, const bool succeeded) {
   STATS.onPageTurn();
   if (forward && !statsBookFinished && isAtEndOfBook()) {
     statsBookFinished = true;
-    STATS.onBookFinished();
+    STATS.onBookFinished(ReadingStats::hashBookPath(bookPath.c_str()));
   }
 }
 

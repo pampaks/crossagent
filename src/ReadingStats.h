@@ -23,8 +23,8 @@ class ReadingStats : public PersistableStore<ReadingStats> {
   // Session lifecycle (called from ReaderActivity)
   void onSessionStart();
   void onPageTurn();
-  void onBookFinished();
-  void onSessionEnd();  // must be a no-op unless a session is active (safe to call twice)
+  void onBookFinished(uint32_t bookHash);  // recent nonzero hashes count once; 0 = unknown
+  void onSessionEnd();                     // must be a no-op unless a session is active (safe to call twice)
 
   // Returns estimated minutes for pagesLeft: -1 = not enough data (fewer than 5 timed page turns),
   // 0 when pagesLeft <= 0, otherwise at least 1 (use lroundf).
@@ -41,7 +41,7 @@ class ReadingStats : public PersistableStore<ReadingStats> {
   uint32_t getTotalPagesRead() const;
   uint32_t getTotalReadingSeconds() const;
   uint16_t getTotalBooksFinished() const;
-  uint16_t getCurrentStreakDays() const;
+  uint16_t getCurrentStreakDays() const;  // expires after a missed day when trusted time is available
   uint16_t getLongestStreakDays() const;
   uint32_t getSessionCount() const;                  // number of completed + active sessions ever
   bool hasEpoch() const;                             // true when trusted time is available right now
@@ -53,6 +53,7 @@ class ReadingStats : public PersistableStore<ReadingStats> {
   static constexpr uint32_t MIN_REAL_DAY_INDEX = 10957;  // 2000-01-01
   static constexpr size_t MAX_DAILY_LOG_ENTRIES = 90;
   static constexpr size_t RESERVED_DAILY_LOG_ENTRIES = MAX_DAILY_LOG_ENTRIES + 1;
+  static constexpr size_t MAX_FINISHED_BOOKS = 64;
   static constexpr uint32_t MIN_TIMED_PAGE_TURNS = 5;
 
   uint32_t totalPagesRead = 0;
@@ -62,11 +63,13 @@ class ReadingStats : public PersistableStore<ReadingStats> {
   uint16_t longestStreakDays = 0;
   uint32_t sessionCount = 0;
   uint32_t lastActiveDayIndex = 0;
-  uint32_t lastSessionEndUnixDay = 0;
   float avgSecondsPerPage = 0.0f;
   uint32_t lastBookHash = 0;
   int32_t lastChapterPagesLeft = -1;
   int32_t lastBookPagesLeft = -1;
+  uint32_t finishedBookHashes[MAX_FINISHED_BOOKS] = {};
+  uint8_t finishedBookCount = 0;
+  uint8_t finishedBookNextIndex = 0;
   std::vector<DayEntry> dailyLog;  // max 90 entries, capacity 91
 
   // In-memory session state (not persisted)
