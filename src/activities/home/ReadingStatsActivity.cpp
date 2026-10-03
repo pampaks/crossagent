@@ -2,8 +2,9 @@
 
 #include <I18n.h>
 #include <Logging.h>
+
 #include <cstdio>
-#include <string>
+#include <cstring>
 
 #include "MappedInputManager.h"
 #include "ReadingStats.h"
@@ -27,13 +28,14 @@ void formatNumber(const uint32_t value, char* out, const size_t outSize) {
   const char* src = digits;
   char* dst = out;
   size_t remaining = outSize;
-  const size_t len = std::char_traits<char>::length(digits);
+  const size_t len = std::strlen(digits);
   const size_t firstGroup = len % 3 == 0 ? 3 : len % 3;
 
   for (size_t i = 0; i < len && remaining > 1; ++i) {
     *dst++ = src[i];
     --remaining;
-    const bool isSeparatorPos = (i + 1) < len && ((i + 1 == firstGroup) || ((i + 1 > firstGroup) && ((i + 1 - firstGroup) % 3 == 0)));
+    const bool isSeparatorPos =
+        (i + 1) < len && ((i + 1 == firstGroup) || ((i + 1 > firstGroup) && ((i + 1 - firstGroup) % 3 == 0)));
     if (isSeparatorPos && remaining > 1) {
       *dst++ = ',';
       --remaining;
@@ -43,35 +45,29 @@ void formatNumber(const uint32_t value, char* out, const size_t outSize) {
   *dst = '\0';
 }
 
-void formatMinutes(const uint32_t totalMinutes, char* out, const size_t outSize) {
+void formatDurationMinutes(const uint32_t totalMinutes, char* out, const size_t outSize) {
   const uint32_t hours = totalMinutes / 60U;
   const uint32_t minutes = totalMinutes % 60U;
 
   if (hours > 0U) {
-    std::snprintf(out, outSize, "%luh %lum", static_cast<unsigned long>(hours), static_cast<unsigned long>(minutes));
+    std::snprintf(out, outSize, tr(STR_STATS_DURATION_HM_FORMAT), static_cast<unsigned>(hours),
+                  static_cast<unsigned>(minutes));
   } else {
-    std::snprintf(out, outSize, "%lum", static_cast<unsigned long>(minutes));
+    std::snprintf(out, outSize, tr(STR_STATS_DURATION_M_FORMAT), static_cast<unsigned>(minutes));
   }
 }
 
 void formatAverageSession(const ReadingStats& stats, char* out, const size_t outSize) {
   const uint32_t totalSeconds = stats.getTotalReadingSeconds();
-  const auto& dailyLog = stats.getDailyLog();
+  const uint32_t sessionCount = stats.getSessionCount();
 
-  uint32_t sessionCount = 0;
-  for (const auto& entry : dailyLog) {
-    if (entry.minutes > 0U) {
-      ++sessionCount;
-    }
-  }
-
-  if (sessionCount == 0U || totalSeconds == 0U) {
-    std::snprintf(out, outSize, "0m");
+  if (sessionCount == 0U) {
+    formatDurationMinutes(0U, out, outSize);
     return;
   }
 
-  const uint32_t averageMinutes = (totalSeconds / 60U) / sessionCount;
-  formatMinutes(averageMinutes, out, outSize);
+  const uint32_t averageSeconds = totalSeconds / sessionCount;
+  formatDurationMinutes(averageSeconds / 60U, out, outSize);
 }
 
 void drawStatTile(GfxRenderer& renderer, int x, int y, int width, int height, const char* label, const char* value) {
@@ -100,8 +96,8 @@ void ReadingStatsActivity::onExit() {
 }
 
 void ReadingStatsActivity::loop() {
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    LOG_DBG("READING_STATS", "Back pressed, returning to previous screen");
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    LOG_DBG("READING_STATS", "Back released, returning to previous screen");
     finish();
   }
 }
@@ -127,17 +123,18 @@ void ReadingStatsActivity::render() {
   const int tileGap = spacing;
   const bool isLandscape = screenWidth >= screenHeight;
   const int summaryHeight = isLandscape ? (kTileHeight + spacing + 2) : (kTileHeight * 2 + tileGap + spacing);
+  const bool hasEpoch = STATS.hasEpoch();
 
-  const int streakHeight = STATS.hasEpoch() ? (lineHeight10 + 10) : (lineHeight10 + renderer.getLineHeight(SMALL_FONT_ID) + spacing + 12);
+  const int streakHeight =
+      hasEpoch ? (lineHeight10 + 10) : (lineHeight10 + renderer.getLineHeight(SMALL_FONT_ID) + spacing + 12);
   const int heatmapTitleHeight = lineHeight10 + 4;
   const int heatmapGridWidth = kHeatmapColumns * kHeatmapCellSize + (kHeatmapColumns - 1) * kHeatmapGap;
   const int heatmapGridHeight = kHeatmapRows * kHeatmapCellSize + (kHeatmapRows - 1) * kHeatmapGap;
   const int heatmapTop = marginTop + spacing;
-  const int heatmapSectionTop =
-      heatmapTop + summaryHeight + spacing + 2 + spacing + streakHeight + spacing;
+  const int heatmapSectionTop = heatmapTop + summaryHeight + spacing + 2 + spacing + streakHeight + spacing;
   renderer.clearScreen();
-  const int tileWidth = isLandscape ? (contentWidth - tileGap * (kSummaryColumns - 1)) / kSummaryColumns
-                                    : (contentWidth - tileGap) / 2;
+  const int tileWidth =
+      isLandscape ? (contentWidth - tileGap * (kSummaryColumns - 1)) / kSummaryColumns : (contentWidth - tileGap) / 2;
 
   char totalPages[24];
   char totalTime[24];
@@ -145,26 +142,27 @@ void ReadingStatsActivity::render() {
   char averageSession[24];
 
   formatNumber(STATS.getTotalPagesRead(), totalPages, sizeof(totalPages));
-  formatMinutes(STATS.getTotalReadingSeconds() / 60U, totalTime, sizeof(totalTime));
+  formatDurationMinutes(STATS.getTotalReadingSeconds() / 60U, totalTime, sizeof(totalTime));
   std::snprintf(booksFinished, sizeof(booksFinished), "%u", static_cast<unsigned int>(STATS.getTotalBooksFinished()));
   formatAverageSession(STATS, averageSession, sizeof(averageSession));
 
   if (isLandscape) {
-    drawStatTile(renderer, contentLeft, heatmapTop, tileWidth, kTileHeight, "Total Pages", totalPages);
-    drawStatTile(renderer, contentLeft + (tileWidth + tileGap), heatmapTop, tileWidth, kTileHeight, "Reading Time",
-                 totalTime);
+    drawStatTile(renderer, contentLeft, heatmapTop, tileWidth, kTileHeight, tr(STR_STATS_TOTAL_PAGES), totalPages);
+    drawStatTile(renderer, contentLeft + (tileWidth + tileGap), heatmapTop, tileWidth, kTileHeight,
+                 tr(STR_STATS_READING_TIME), totalTime);
     drawStatTile(renderer, contentLeft + (tileWidth + tileGap) * 2, heatmapTop, tileWidth, kTileHeight,
-                 "Books Finished", booksFinished);
+                 tr(STR_STATS_BOOKS_FINISHED), booksFinished);
     drawStatTile(renderer, contentLeft + (tileWidth + tileGap) * 3, heatmapTop, tileWidth, kTileHeight,
-                 "Avg Session", averageSession);
+                 tr(STR_STATS_AVG_SESSION), averageSession);
   } else {
     const int secondRowY = heatmapTop + kTileHeight + tileGap;
-    drawStatTile(renderer, contentLeft, heatmapTop, tileWidth, kTileHeight, "Total Pages", totalPages);
-    drawStatTile(renderer, contentLeft + tileWidth + tileGap, heatmapTop, tileWidth, kTileHeight, "Reading Time",
-                 totalTime);
-    drawStatTile(renderer, contentLeft, secondRowY, tileWidth, kTileHeight, "Books Finished", booksFinished);
-    drawStatTile(renderer, contentLeft + tileWidth + tileGap, secondRowY, tileWidth, kTileHeight, "Avg Session",
-                 averageSession);
+    drawStatTile(renderer, contentLeft, heatmapTop, tileWidth, kTileHeight, tr(STR_STATS_TOTAL_PAGES), totalPages);
+    drawStatTile(renderer, contentLeft + tileWidth + tileGap, heatmapTop, tileWidth, kTileHeight,
+                 tr(STR_STATS_READING_TIME), totalTime);
+    drawStatTile(renderer, contentLeft, secondRowY, tileWidth, kTileHeight, tr(STR_STATS_BOOKS_FINISHED),
+                 booksFinished);
+    drawStatTile(renderer, contentLeft + tileWidth + tileGap, secondRowY, tileWidth, kTileHeight,
+                 tr(STR_STATS_AVG_SESSION), averageSession);
   }
 
   const int summaryDividerY = heatmapTop + summaryHeight;
@@ -172,9 +170,10 @@ void ReadingStatsActivity::render() {
 
   char currentStreak[40];
   char bestStreak[24];
-  std::snprintf(currentStreak, sizeof(currentStreak), "Current Streak: %u days",
+  std::snprintf(currentStreak, sizeof(currentStreak), tr(STR_STATS_CURRENT_STREAK_FORMAT),
                 static_cast<unsigned int>(STATS.getCurrentStreakDays()));
-  std::snprintf(bestStreak, sizeof(bestStreak), "Best: %u days", static_cast<unsigned int>(STATS.getLongestStreakDays()));
+  std::snprintf(bestStreak, sizeof(bestStreak), tr(STR_STATS_BEST_STREAK_FORMAT),
+                static_cast<unsigned int>(STATS.getLongestStreakDays()));
 
   const int streakY = summaryDividerY + spacing;
   renderer.drawText(UI_10_FONT_ID, contentLeft, streakY, currentStreak, true, EpdFontFamily::BOLD);
@@ -182,18 +181,19 @@ void ReadingStatsActivity::render() {
   const int bestWidth = renderer.getTextWidth(UI_10_FONT_ID, bestStreak, EpdFontFamily::BOLD);
   renderer.drawText(UI_10_FONT_ID, contentRight - bestWidth, streakY, bestStreak, true, EpdFontFamily::BOLD);
 
-  if (!STATS.hasEpoch()) {
-    renderer.drawText(SMALL_FONT_ID, contentLeft, streakY + lineHeight10 + spacing,
-                      "Connect to WiFi to enable streak tracking", true, EpdFontFamily::ITALIC);
+  if (!hasEpoch) {
+    renderer.drawText(SMALL_FONT_ID, contentLeft, streakY + lineHeight10 + spacing, tr(STR_STATS_NO_EPOCH), true,
+                      EpdFontFamily::ITALIC);
   }
 
-  renderer.drawText(UI_10_FONT_ID, contentLeft, heatmapSectionTop, "Reading Activity (last 90 days)", true,
+  renderer.drawText(UI_10_FONT_ID, contentLeft, heatmapSectionTop, tr(STR_STATS_READING_ACTIVITY), true,
                     EpdFontFamily::BOLD);
 
   const int gridX = contentLeft + ((contentWidth - heatmapGridWidth) / 2);
   const int gridY = heatmapSectionTop + heatmapTitleHeight + spacing;
   const auto& dailyLog = STATS.getDailyLog();
-  const uint32_t newestDayIndex = dailyLog.empty() ? 0U : dailyLog.front().dayIndex;
+  const uint32_t todayIndex = STATS.todayIndex();
+  const uint32_t anchorDayIndex = todayIndex != 0U ? todayIndex : (dailyLog.empty() ? 0U : dailyLog.front().dayIndex);
 
   for (int slot = 0; slot < kHeatmapDays; ++slot) {
     const int row = slot / kHeatmapColumns;
@@ -204,8 +204,8 @@ void ReadingStatsActivity::render() {
     uint16_t pages = 0;
     if (!dailyLog.empty()) {
       const uint32_t dayOffset = static_cast<uint32_t>(kHeatmapDays - 1 - slot);
-      if (newestDayIndex >= dayOffset) {
-        const uint32_t dayIndex = newestDayIndex - dayOffset;
+      if (anchorDayIndex >= dayOffset) {
+        const uint32_t dayIndex = anchorDayIndex - dayOffset;
         for (const auto& entry : dailyLog) {
           if (entry.dayIndex == dayIndex) {
             pages = entry.pages;
